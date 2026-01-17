@@ -1,7 +1,7 @@
 # DocuFresh-AI
 
 [![npm version](https://img.shields.io/npm/v/docufresh-ai.svg)](https://www.npmjs.com/package/docufresh-ai)
-[![license](https://img.shields.io/npm/l/docufresh-ai.svg)](https://github.com/manthenavamsi/docufresh-ai/blob/main/LICENSE)
+[![license](https://img.shields.io/github/license/manthenavamsi/docufreshAI)](LICENSE)
 
 AI-powered content freshening for [docufresh](https://www.npmjs.com/package/docufresh). Keep your documents updated with real-world facts using **Wikipedia + browser-based AI**.
 
