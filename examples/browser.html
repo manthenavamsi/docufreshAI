@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocuFresh-AI Browser Demo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #2d3748;
+    }
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .input-group {
+      margin: 15px 0;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #4a5568;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    textarea {
+      min-height: 100px;
+      font-family: monospace;
+    }
+    button {
+      background: #4299e1;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #3182ce;
+    }
+    button:disabled {
+      background: #a0aec0;
+      cursor: not-allowed;
+    }
+    .output {
+      background: #edf2f7;
+      padding: 15px;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      font-family: monospace;
+      margin-top: 15px;
+    }
+    .progress {
+      background: #e2e8f0;
+      border-radius: 4px;
+      height: 20px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress-bar {
+      background: #48bb78;
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .status {
+      color: #718096;
+      font-size: 14px;
+    }
+    .examples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 10px 0;
+    }
+    .example-btn {
+      background: #edf2f7;
+      color: #4a5568;
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+    .example-btn:hover {
+      background: #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+  <h1>DocuFresh-AI Browser Demo</h1>
+
+  <div class="card">
+    <h2>1. Initialize AI Engine</h2>
+    <p class="status">First, load the AI model (downloads ~250MB on first run):</p>
+
+    <div class="progress" id="progressContainer" style="display: none;">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <p class="status" id="statusText">Click "Initialize" to start</p>
+
+    <button id="initBtn" onclick="initAI()">Initialize AI</button>
+  </div>
+
+  <div class="card">
+    <h2>2. Try AI Markers</h2>
+
+    <div class="input-group">
+      <label>Enter text with AI markers:</label>
+      <textarea id="inputText">{{ai_fact:JavaScript}}</textarea>
+    </div>
+
+    <label>Quick Examples:</label>
+    <div class="examples">
+      <button class="example-btn" onclick="setExample('{{ai_fact:JavaScript}}')">ai_fact</button>
+      <button class="example-btn" onclick="setExample('{{ai_describe:Python_(programming_language)}}')">ai_describe</button>
+      <button class="example-btn" onclick="setExample('{{ai_paragraph:Artificial_intelligence}}')">ai_paragraph</button>
+      <button class="example-btn" onclick="setExample('{{ai_rewrite:World_population:There are X people on Earth}}')">ai_rewrite</button>
+      <button class="example-btn" onclick="setExample('{{ai_answer:Moon:How far is it from Earth?}}')">ai_answer</button>
+      <button class="example-btn" onclick="setExample('{{ai_link:React_(JavaScript_library)}}')">ai_link</button>
+    </div>
+
+    <button id="processBtn" onclick="processText()" disabled>Process Text</button>
+
+    <div class="output" id="output">Output will appear here...</div>
+  </div>
+
+  <div class="card">
+    <h2>3. Wikipedia Search</h2>
+
+    <div class="input-group">
+      <label>Search Wikipedia:</label>
+      <input type="text" id="searchQuery" placeholder="e.g., programming languages" value="machine learning">
+    </div>
+
+    <button id="searchBtn" onclick="searchWiki()" disabled>Search</button>
+
+    <div class="output" id="searchOutput">Search results will appear here...</div>
+  </div>
+
+  <script type="module">
+    // Import DocuFreshAI from CDN
+    // In production, you'd use: import DocuFreshAI from 'docufresh-ai';
+    import { DocuFreshAI } from 'https://esm.sh/docufresh-ai@0.1.0';
+
+    let ai = null;
+
+    // Make functions globally available
+    window.initAI = async function() {
+      const btn = document.getElementById('initBtn');
+      const status = document.getElementById('statusText');
+      const progressContainer = document.getElementById('progressContainer');
+      const progressBar = document.getElementById('progressBar');
+
+      btn.disabled = true;
+      btn.textContent = 'Initializing...';
+      progressContainer.style.display = 'block';
+
+      try {
+        ai = new DocuFreshAI({
+          onProgress: (progress) => {
+            if (progress.status === 'progress' && progress.total) {
+              const percent = Math.round((progress.loaded / progress.total) * 100);
+              progressBar.style.width = percent + '%';
+              status.textContent = `Downloading model: ${percent}% (${Math.round(progress.loaded/1024/1024)}MB / ${Math.round(progress.total/1024/1024)}MB)`;
+            } else if (progress.status === 'ready') {
+              status.textContent = 'Model loaded!';
+            }
+          }
+        });
+
+        await ai.init();
+
+        progressBar.style.width = '100%';
+        status.textContent = '✅ AI Ready! You can now process text.';
+        btn.textContent = 'Initialized!';
+
+        document.getElementById('processBtn').disabled = false;
+        document.getElementById('searchBtn').disabled = false;
+
+      } catch (error) {
+        status.textContent = '❌ Error: ' + error.message;
+        btn.disabled = false;
+        btn.textContent = 'Retry Initialize';
+      }
+    };
+
+    window.processText = async function() {
+      const input = document.getElementById('inputText').value;
+      const output = document.getElementById('output');
+      const btn = document.getElementById('processBtn');
+
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+      output.textContent = 'Processing...';
+
+      try {
+        const result = await ai.process(input);
+        output.textContent = result;
+      } catch (error) {
+        output.textContent = 'Error: ' + error.message;
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Process Text';
+    };
+
+    window.searchWiki = async function() {
+      const query = document.getElementById('searchQuery').value;
+      const output = document.getElementById('searchOutput');
+      const btn = document.getElementById('searchBtn');
+
+      btn.disabled = true;
+      output.textContent = 'Searching...';
+
+      try {
+        const results = await ai.search(query, 5);
+        output.textContent = results.map((r, i) =>
+          `${i+1}. ${r.title}\n   ${r.description}\n   ${r.url}`
+        ).join('\n\n');
+      } catch (error) {
+        output.textContent = 'Error: ' + error.message;
+      }
+
+      btn.disabled = false;
+    };
+
+    window.setExample = function(text) {
+      document.getElementById('inputText').value = text;
+    };
+  </script>
+</body>
+</html>

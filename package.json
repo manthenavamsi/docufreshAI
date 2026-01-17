@@ -1,0 +1,52 @@
+{
+  "name": "docufresh-ai",
+  "version": "0.1.0",
+  "description": "AI-powered content freshening for docufresh - Uses Wikipedia + browser-based AI (no API keys needed)",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "node tests/ai.test.js",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "docufresh",
+    "ai",
+    "transformers",
+    "wikipedia",
+    "content-update",
+    "fresh-content",
+    "browser-ai",
+    "text-generation",
+    "fact-checking",
+    "dynamic-content"
+  ],
+  "author": "Vamsi Manthena <manthenavamsi@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/manthenavamsi/docufresh-ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/manthenavamsi/docufresh-ai/issues"
+  },
+  "homepage": "https://github.com/manthenavamsi/docufresh-ai#readme",
+  "peerDependencies": {
+    "docufresh": ">=0.1.0"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0"
+  }
+}
