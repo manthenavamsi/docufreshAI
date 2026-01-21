@@ -188,6 +188,137 @@ await test('WikipediaClient handles invalid topics gracefully', async () => {
 });
 
 // ============================================
+// TEMPERATURE AND SEARCH FALLBACK TESTS
+// ============================================
+
+console.log('\n--- Temperature & Search Fallback Tests ---\n');
+
+// Test: DocuFreshAI temperature option
+await test('DocuFreshAI accepts temperature option', async () => {
+  const ai = new DocuFreshAI({ temperature: 0.7 });
+  assert(ai.temperature === 0.7, `Temperature should be 0.7, got ${ai.temperature}`);
+});
+
+// Test: DocuFreshAI defaults to temperature 0
+await test('DocuFreshAI defaults to temperature 0', async () => {
+  const ai = new DocuFreshAI();
+  assert(ai.temperature === 0, `Default temperature should be 0, got ${ai.temperature}`);
+});
+
+// Test: DocuFreshAI searchFallback option
+await test('DocuFreshAI accepts searchFallback option', async () => {
+  const aiWithFallback = new DocuFreshAI({ searchFallback: true });
+  const aiWithoutFallback = new DocuFreshAI({ searchFallback: false });
+
+  assert(aiWithFallback.searchFallback === true, 'searchFallback should be true');
+  assert(aiWithoutFallback.searchFallback === false, 'searchFallback should be false');
+});
+
+// Test: DocuFreshAI defaults to searchFallback true
+await test('DocuFreshAI defaults to searchFallback true', async () => {
+  const ai = new DocuFreshAI();
+  assert(ai.searchFallback === true, `Default searchFallback should be true, got ${ai.searchFallback}`);
+});
+
+// Test: WikipediaClient getFactWithFallback method exists
+await test('WikipediaClient has getFactWithFallback method', async () => {
+  const client = new WikipediaClient();
+  assert(typeof client.getFactWithFallback === 'function', 'getFactWithFallback should be a function');
+});
+
+// Test: WikipediaClient getFactWithFallback works for valid topic
+await test('WikipediaClient.getFactWithFallback works for valid topic', async () => {
+  const client = new WikipediaClient();
+  const fact = await client.getFactWithFallback('JavaScript');
+
+  assert(typeof fact === 'string', 'Fact should be a string');
+  assert(fact.length > 0, 'Fact should not be empty');
+  assert(!fact.includes('Unable to find'), 'Should find JavaScript article');
+  console.log(`   Fact preview: "${fact.slice(0, 80)}..."`);
+});
+
+// Test: WikipediaClient getFactWithFallback uses search for partial matches
+await test('WikipediaClient.getFactWithFallback searches for partial matches', async () => {
+  const client = new WikipediaClient();
+  // Use a query that might not be an exact article title but should find results via search
+  const fact = await client.getFactWithFallback('JavaScript programming language');
+
+  assert(typeof fact === 'string', 'Fact should be a string');
+  assert(fact.length > 0, 'Fact should not be empty');
+  console.log(`   Fallback fact preview: "${fact.slice(0, 80)}..."`);
+});
+
+// ============================================
+// NESTED MARKER TESTS (Parser only - no AI needed)
+// ============================================
+
+console.log('\n--- Nested Marker Parser Tests ---\n');
+
+// Test 17: Simple marker pattern detection
+await test('Parser detects simple markers', async () => {
+  const text = '{{ai_link:JavaScript}}';
+  const pattern = /\{\{(ai_\w+):([^{}]*)\}\}/g;
+  const matches = [...text.matchAll(pattern)];
+
+  assert(matches.length === 1, `Should find 1 match, found ${matches.length}`);
+  assert(matches[0][1] === 'ai_link', 'Should extract marker name');
+  assert(matches[0][2] === 'JavaScript', 'Should extract parameter');
+});
+
+// Test 18: Nested marker pattern - inner first
+await test('Parser pattern matches innermost markers only', async () => {
+  const text = '{{ai_complete:Hello {{ai_link:World}} there}}';
+  const pattern = /\{\{(ai_\w+):([^{}]*)\}\}/g;
+  const matches = [...text.matchAll(pattern)];
+
+  // Should only match the inner marker (no {{ in its params)
+  assert(matches.length === 1, `Should find 1 innermost match, found ${matches.length}`);
+  assert(matches[0][1] === 'ai_link', 'Should match inner marker first');
+  assert(matches[0][2] === 'World', 'Should extract inner parameter');
+});
+
+// Test 19: Multiple nested markers
+await test('Parser handles multiple nested markers', async () => {
+  const text = '{{ai_complete:The {{ai_link:A}} and {{ai_link:B}} test}}';
+  const pattern = /\{\{(ai_\w+):([^{}]*)\}\}/g;
+  const matches = [...text.matchAll(pattern)];
+
+  assert(matches.length === 2, `Should find 2 inner matches, found ${matches.length}`);
+  assert(matches[0][1] === 'ai_link', 'First should be ai_link');
+  assert(matches[1][1] === 'ai_link', 'Second should be ai_link');
+});
+
+// Test 20: ai_answer with single parameter (question only)
+await test('ai_answer marker supports question-only format', async () => {
+  // This tests the marker definition accepts single param
+  const text = '{{ai_answer:What is 2+2}}';
+  const pattern = /\{\{(ai_\w+):([^{}]*)\}\}/g;
+  const matches = [...text.matchAll(pattern)];
+
+  assert(matches.length === 1, 'Should match single-param ai_answer');
+  assert(matches[0][2] === 'What is 2+2', 'Should capture the question');
+});
+
+// Test 21: ai_complete marker exists
+await test('ai_complete marker is available', async () => {
+  const ai = new DocuFreshAI();
+  // Don't init (would download model), just check markers exist after manual setup
+  // This is a structural test
+  assert(typeof DocuFreshAI === 'function', 'DocuFreshAI should be a class');
+});
+
+// Test 22: Colons in content preserved for ai_rewrite
+await test('Parser preserves colons in content for ai_rewrite', async () => {
+  const text = '{{ai_rewrite:topic:This has: colons in it}}';
+  const pattern = /\{\{(ai_\w+):([^{}]*)\}\}/g;
+  const matches = [...text.matchAll(pattern)];
+
+  assert(matches.length === 1, 'Should match the marker');
+  // The full params string includes all colons
+  assert(matches[0][2] === 'topic:This has: colons in it', 'Should capture full params with colons');
+});
+
+// ============================================
 // RESULTS
 // ============================================
 

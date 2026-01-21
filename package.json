@@ -1,6 +1,6 @@
 {
   "name": "docufresh-ai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI-powered content freshening for docufresh - Uses Wikipedia + browser-based AI (no API keys needed)",
   "main": "src/index.js",
   "types": "src/index.d.ts",

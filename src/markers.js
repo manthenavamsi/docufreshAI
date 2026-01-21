@@ -1,55 +1,85 @@
 /**
  * AI-Powered Markers
  * Extends docufresh with intelligent content generation
+ * All ai_* markers use AI processing for intelligent output
  */
 
 /**
  * Create AI marker functions
  * @param {WikipediaClient} wikipedia - Wikipedia client instance
  * @param {AIEngine} ai - AI engine instance
+ * @param {object} options - Configuration options
+ * @param {boolean} options.searchFallback - Use search fallback if direct lookup fails (default: true)
  * @returns {object} - Marker functions
  */
-function createAIMarkers(wikipedia, ai) {
+function createAIMarkers(wikipedia, ai, options = {}) {
+  const useSearchFallback = options.searchFallback ?? true;
+
+  // Helper function to get facts with optional fallback
+  const getFactsFromWikipedia = async (topic) => {
+    if (useSearchFallback) {
+      return wikipedia.getFactWithFallback(topic);
+    }
+    return wikipedia.getFact(topic);
+  };
+
   return {
     /**
-     * Get a fact about a topic from Wikipedia
+     * Get the key fact about a topic (AI extracts the most important fact)
      * Usage: {{ai_fact:topic_name}}
-     * Example: {{ai_fact:Albert_Einstein}} → "Albert Einstein was a German-born theoretical physicist..."
+     * Example: {{ai_fact:Albert_Einstein}} → "Einstein developed the theory of relativity"
      */
     ai_fact: async (topic) => {
-      const fact = await wikipedia.getFact(topic);
-      return fact;
+      const fullText = await getFactsFromWikipedia(topic);
+      // Use AI to extract the most important fact
+      const keyFact = await ai.extractKeyFact(fullText);
+      return keyFact;
     },
 
     /**
-     * Get a short description of a topic
+     * Get a concise AI-generated description of a topic
      * Usage: {{ai_describe:topic_name}}
-     * Example: {{ai_describe:Python_(programming_language)}} → "General-purpose programming language"
+     * Example: {{ai_describe:Python_(programming_language)}} → "A versatile programming language known for readability"
      */
     ai_describe: async (topic) => {
-      const description = await wikipedia.getDescription(topic);
+      const summary = await wikipedia.getSummary(topic);
+      // Use AI to generate a concise description
+      const description = await ai.generateDescription(topic, summary.extract);
       return description;
     },
 
     /**
-     * Rewrite a sentence incorporating current facts
-     * Usage: {{ai_rewrite:topic:template_with_X}}
-     * Example: {{ai_rewrite:world_population:The world has X people}}
-     *       → "The world has approximately 8.1 billion people"
+     * AI fully rewrites a sentence incorporating Wikipedia facts
+     * Usage: {{ai_rewrite:topic:sentence}}
+     * Example: {{ai_rewrite:USA_Presidents:Presidents have made big changes}}
+     *       → "Throughout American history, presidents have shaped the nation through legislation and reforms"
      */
-    ai_rewrite: async (topic, template) => {
-      // Get fact from Wikipedia
-      const fact = await wikipedia.getFact(topic);
+    ai_rewrite: async (topic, sentence) => {
+      // Get facts from Wikipedia (with optional search fallback)
+      const facts = await getFactsFromWikipedia(topic);
 
-      // Use AI to rewrite naturally
-      const rewritten = await ai.rewriteSentence(fact, template);
+      // Use AI to fully rewrite the sentence with facts
+      const rewritten = await ai.rewriteWithFacts(sentence, facts);
       return rewritten;
     },
 
     /**
-     * Generate a paragraph about a topic
+     * Fill in placeholders while preserving sentence structure (supports nested markers)
+     * Usage: {{ai_complete:sentence with {{ai_answer:question}} inside}}
+     * Example: {{ai_complete:The president is {{ai_answer:Who is the US president}}.}}
+     *       → "The president is Joe Biden."
+     * Note: Inner markers are processed first by the recursive parser
+     */
+    ai_complete: async (content) => {
+      // The recursive parser already processed inner markers
+      // This marker just returns the content as-is (structure preserved)
+      return content;
+    },
+
+    /**
+     * Generate a paragraph about a topic using AI
      * Usage: {{ai_paragraph:topic_name}}
-     * Example: {{ai_paragraph:SpaceX}} → "SpaceX, founded by Elon Musk..."
+     * Example: {{ai_paragraph:SpaceX}} → "SpaceX, founded by Elon Musk in 2002..."
      */
     ai_paragraph: async (topic) => {
       // Get facts from Wikipedia
@@ -61,9 +91,9 @@ function createAIMarkers(wikipedia, ai) {
     },
 
     /**
-     * Get a summary of a topic
+     * Get an AI-generated summary of a topic
      * Usage: {{ai_summary:topic_name}}
-     * Example: {{ai_summary:Climate_change}} → "Climate change refers to..."
+     * Example: {{ai_summary:Climate_change}} → "Climate change is the long-term shift in temperatures..."
      */
     ai_summary: async (topic) => {
       const summary = await wikipedia.getSummary(topic);
@@ -74,22 +104,26 @@ function createAIMarkers(wikipedia, ai) {
     },
 
     /**
-     * Answer a question using Wikipedia as context
-     * Usage: {{ai_answer:topic:question}}
-     * Example: {{ai_answer:Moon:How far is it from Earth?}}
-     *       → "The Moon is approximately 384,400 km from Earth"
+     * Answer a question (with optional topic for context)
+     * Usage: {{ai_answer:question}} or {{ai_answer:topic:question}}
+     * Example: {{ai_answer:Who is the current US president}} → "Joe Biden"
+     * Example: {{ai_answer:Moon:How far is it from Earth?}} → "384,400 km"
      */
-    ai_answer: async (topic, question) => {
-      // Get context from Wikipedia
-      const summary = await wikipedia.getSummary(topic);
-
-      // Use AI to answer
-      const answer = await ai.answerQuestion(question, summary.extract);
-      return answer;
+    ai_answer: async (topicOrQuestion, question) => {
+      if (question) {
+        // Format: {{ai_answer:topic:question}} - use Wikipedia context with fallback
+        const context = await getFactsFromWikipedia(topicOrQuestion);
+        const answer = await ai.answerQuestion(question, context);
+        return answer;
+      } else {
+        // Format: {{ai_answer:question}} - answer directly
+        const answer = await ai.answerSimple(topicOrQuestion);
+        return answer;
+      }
     },
 
     /**
-     * Get the Wikipedia URL for a topic
+     * Get the Wikipedia URL for a topic (no AI needed)
      * Usage: {{ai_link:topic_name}}
      * Example: {{ai_link:JavaScript}} → "https://en.wikipedia.org/wiki/JavaScript"
      */
@@ -99,9 +133,9 @@ function createAIMarkers(wikipedia, ai) {
     },
 
     /**
-     * Get the last updated date for Wikipedia article
+     * Get the last updated date for Wikipedia article (no AI needed)
      * Usage: {{ai_updated:topic_name}}
-     * Example: {{ai_updated:Bitcoin}} → "2024-01-15"
+     * Example: {{ai_updated:Bitcoin}} → "1/15/2024"
      */
     ai_updated: async (topic) => {
       const summary = await wikipedia.getSummary(topic);

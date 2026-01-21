@@ -72,6 +72,37 @@ class WikipediaClient {
   }
 
   /**
+   * Get a fact with search fallback
+   * If direct lookup fails, searches Wikipedia for related articles and tries the best match
+   * @param {string} topic - The topic to look up
+   * @returns {Promise<string>} - The fact/extract text
+   */
+  async getFactWithFallback(topic) {
+    // Try direct lookup first
+    const summary = await this.getSummary(topic);
+
+    // If successful (no error and has content), return it
+    if (!summary.error && summary.extract && !summary.extract.includes('Unable to fetch')) {
+      return summary.extract;
+    }
+
+    // Fallback: search for related articles
+    const searchResults = await this.search(topic, 3);
+
+    if (searchResults.length > 0) {
+      // Try the best match
+      const bestMatch = searchResults[0];
+      const fallbackSummary = await this.getSummary(bestMatch.title);
+
+      if (!fallbackSummary.error && fallbackSummary.extract) {
+        return fallbackSummary.extract;
+      }
+    }
+
+    return `Unable to find information about ${topic}`;
+  }
+
+  /**
    * Get a short description of a topic
    * @param {string} topic - The topic to look up
    * @returns {Promise<string>} - Short description
@@ -168,12 +199,14 @@ class WikipediaClient {
   async fetch(url) {
     // Use global fetch (available in Node 18+ and browsers)
     if (typeof fetch !== 'undefined') {
-      return fetch(url, {
-        headers: {
-          'User-Agent': 'DocuFresh-AI/0.1.0 (https://github.com/manthenavamsi/docufresh-ai)',
-          'Accept': 'application/json'
-        }
-      });
+      const headers = { 'Accept': 'application/json' };
+
+      // Only set User-Agent in Node.js (browsers forbid this header)
+      if (typeof window === 'undefined') {
+        headers['User-Agent'] = 'DocuFresh-AI/0.1.0 (https://github.com/manthenavamsi/docufresh-ai)';
+      }
+
+      return fetch(url, { headers });
     }
 
     // Fallback for older Node.js (shouldn't be needed with Node 18+)

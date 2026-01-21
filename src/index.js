@@ -40,16 +40,21 @@ class DocuFreshAI {
    * Create a DocuFreshAI instance
    * @param {object} options - Configuration options
    * @param {string} options.model - Model to use: 'small' (default), 'base', 'large', or custom model ID
+   * @param {number} options.temperature - AI temperature: 0 (deterministic) to 1 (creative). Default: 0
+   * @param {boolean} options.searchFallback - Search Wikipedia if direct lookup fails. Default: true
    * @param {number} options.cacheTTL - Wikipedia cache TTL in ms (default: 1 hour)
    * @param {function} options.onProgress - Callback for model download progress
    */
   constructor(options = {}) {
     this.options = options;
+    this.temperature = options.temperature ?? 0;
+    this.searchFallback = options.searchFallback ?? true;
     this.wikipedia = new WikipediaClient({
       cacheTTL: options.cacheTTL
     });
     this.ai = new AIEngine({
       model: options.model,
+      temperature: this.temperature,
       onProgress: options.onProgress
     });
     this.markers = null;
@@ -70,18 +75,20 @@ class DocuFreshAI {
     // Initialize AI engine (downloads model)
     await this.ai.init();
 
-    // Create markers
-    this.markers = createAIMarkers(this.wikipedia, this.ai);
+    // Create markers with options
+    this.markers = createAIMarkers(this.wikipedia, this.ai, {
+      searchFallback: this.searchFallback
+    });
 
     this.ready = true;
     console.log('DocuFresh-AI ready!');
   }
 
   /**
-   * Process text with AI markers
-   * Handles async markers that fetch from Wikipedia and generate with AI
+   * Process text with AI markers (supports nested markers)
+   * Uses recursive parsing: processes innermost markers first, then outer ones
    *
-   * @param {string} text - Text containing {{ai_*}} markers
+   * @param {string} text - Text containing {{ai_*}} markers (can be nested)
    * @param {object} customData - Optional custom data for basic markers
    * @returns {Promise<string>} - Processed text
    */
@@ -94,57 +101,95 @@ class DocuFreshAI {
 
     // Replace custom data first (simple sync replacement)
     for (const [key, value] of Object.entries(customData)) {
-      const pattern = new RegExp(`{{${key}}}`, 'g');
+      const pattern = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
       result = result.replace(pattern, String(value));
     }
 
-    // Find all AI markers
-    const markerPattern = /{{(ai_\w+):([^}]*)}}/g;
-    const matches = [...result.matchAll(markerPattern)];
+    // Recursive processing: find and process innermost markers first
+    // Pattern matches markers with NO {{ inside their params (innermost only)
+    const maxIterations = 10; // Prevent infinite loops
+    let iteration = 0;
 
-    // Process each AI marker
-    for (const match of matches) {
-      const fullMarker = match[0];
-      const markerName = match[1];
-      const paramsString = match[2];
+    while (iteration < maxIterations) {
+      iteration++;
 
-      // Split parameters by : (but not within the params themselves)
-      const params = paramsString.split(':').map(p => p.trim());
+      // Find innermost markers (no {{ inside params)
+      // Matches: {{ai_name:params}} where params has no {{ or }}
+      const innerPattern = /\{\{(ai_\w+):([^{}]*)\}\}/g;
+      const matches = [...result.matchAll(innerPattern)];
 
-      const markerFn = this.markers[markerName];
+      // Also find simple markers without params: {{ai_name}}
+      const simplePattern = /\{\{(ai_\w+)\}\}/g;
+      const simpleMatches = [...result.matchAll(simplePattern)];
 
-      if (markerFn) {
-        try {
-          const replacement = await markerFn(...params);
-          result = result.replace(fullMarker, replacement);
-        } catch (error) {
-          console.error(`Error processing ${markerName}:`, error.message);
-          // Leave marker unchanged on error
-        }
+      // No more markers to process
+      if (matches.length === 0 && simpleMatches.length === 0) {
+        break;
       }
-    }
 
-    // Also handle simple ai_* markers without params
-    const simplePattern = /{{(ai_\w+)}}/g;
-    const simpleMatches = [...result.matchAll(simplePattern)];
+      // Process markers with params
+      for (const match of matches) {
+        const fullMarker = match[0];
+        const markerName = match[1];
+        const paramsString = match[2];
 
-    for (const match of simpleMatches) {
-      const fullMarker = match[0];
-      const markerName = match[1];
+        const replacement = await this.processMarker(markerName, paramsString);
+        result = result.replace(fullMarker, replacement);
+      }
 
-      const markerFn = this.markers[markerName];
+      // Process simple markers
+      for (const match of simpleMatches) {
+        const fullMarker = match[0];
+        const markerName = match[1];
 
-      if (markerFn) {
-        try {
-          const replacement = await markerFn();
-          result = result.replace(fullMarker, replacement);
-        } catch (error) {
-          console.error(`Error processing ${markerName}:`, error.message);
-        }
+        const replacement = await this.processMarker(markerName, '');
+        result = result.replace(fullMarker, replacement);
       }
     }
 
     return result;
+  }
+
+  /**
+   * Process a single marker
+   * @param {string} markerName - The marker name (e.g., 'ai_fact')
+   * @param {string} paramsString - The parameters string
+   * @returns {Promise<string>} - The replacement text
+   */
+  async processMarker(markerName, paramsString) {
+    const markerFn = this.markers[markerName];
+
+    if (!markerFn) {
+      console.warn(`Unknown marker: ${markerName}`);
+      return `{{${markerName}:${paramsString}}}`;
+    }
+
+    try {
+      if (paramsString) {
+        // Split parameters by first colon only for markers that take topic:content
+        // This preserves colons within the content
+        const colonIndex = paramsString.indexOf(':');
+        let params;
+
+        if (colonIndex !== -1 && ['ai_rewrite', 'ai_answer', 'ai_complete'].includes(markerName)) {
+          // For these markers, split only on first colon: topic:rest_of_content
+          params = [
+            paramsString.slice(0, colonIndex).trim(),
+            paramsString.slice(colonIndex + 1).trim()
+          ];
+        } else {
+          // For other markers, simple split
+          params = paramsString.split(':').map(p => p.trim());
+        }
+
+        return await markerFn(...params);
+      } else {
+        return await markerFn();
+      }
+    } catch (error) {
+      console.error(`Error processing ${markerName}:`, error.message);
+      return `{{${markerName}:${paramsString}}}`; // Return original on error
+    }
   }
 
   /**
